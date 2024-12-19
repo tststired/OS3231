@@ -1,0 +1,58 @@
+ASST2 GROUP 123 Design Document
+
+What significant data structures have you added and what function do they perform?
+
+    Per Process File Descriptor Table
+        - A struct containing an integer array.
+        - Each index represents the file descriptor number and at that index is an integer to index the Global Open Files Table.
+    Global Open Files Table
+        - A struct containing an array of Open File Entries.
+    Open File Entries 
+        - A struct containing a struct vnode *, count of the references to this file of type int and file pointer of type offset and flags. 
+
+
+What are any significant issues surround managing the data structures and state do they contain?
+
+    For each process we have to create a unique file descriptor table to allow for multiple reads for the same files and for multiple file
+    descriptors to point towards the same opened file reference (i.e. dup2).
+
+    For the open files table we have to synchronize reference counts which allows us to synchronize vnode reference counts. 
+
+    The per process file descriptor table allows each process to keep track of which file descriptors have been assigned and where to.
+        - This is initialized to -1 to indicate free slots which is mapped towards the global open file tables when needed prioritising the lowest
+          free descriptor.
+
+    Permission flags and files
+        - Each open file needs to keep track of the permissions that it was opened with such that future references accessing that entry know 
+          whether or not their operation is legal.
+
+    Reference counting
+        - Each use of dup2 by any process will require a fd to point to an existing entry within the open file table where they will access a 
+          shared file pointer and vnode pointer.
+        - The reference count inside the open files table counts how many file descriptors entries are pointing to them.
+        - When close is called and reference count-- is 0, the vnode is deallocated, the open files table entry is cleared and per process file 
+          descriptor table set to -1 for that particular file descriptor. 
+
+
+What data structures are per-process and what structures are shared between processes?
+    File Descriptor struct is per process.
+    Open Files struct is shared between processes.
+    Vnodes are shared between processes depending on the situation. 
+
+
+What is the main issues related to transferring data to and from applications?
+    A important area to consider when transferring data to and from applications is whether or not the userptr_t that the application is trying to 
+    access is within the ranges of memory that should be accessed by it and not in illegal areas where it could cause damage to the kernel.
+        - This was dealt with in our design through the use of the copyinout.h helper functions, namely copyinstr and copyin which factors in  
+          checking for a valid memory address and retrieves the appropriate data on success.
+
+If fork() was implemented, what concurrency issues would be introduced to your implementation?
+    
+    Reference counts would be required to have a lock variables around them to prevent race conditions. 
+    Creation of new entries in open files table would also require some lock to avoid overwriting.
+        - File pointers updating would also require a lock to avoid race conditions to prevent a child from overwriting its parents calls. 
+        - Permission flags would also be protected with the locks from the new entries locks
+    For reading and writing, uio_resid, uio_offset, uio_uinit, and the VOP_READ/VOP_WRITE would require locks. 
+        - this prevents offset and resid from being accessed and uinit to correctly copy data from the kernel buffer to the data region specified 
+          by uio.
+        
